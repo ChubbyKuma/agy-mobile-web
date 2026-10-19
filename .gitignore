@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.log
+.venv/
+venv/
+ENV/
+
+# Temporary / sensitive data
+*.txt
+*.pdf
+*.html
+*.jpg
+*.jpeg
+*.png
+*.exe
+!index.html
+
+# Local config & overrides
+.env
+config.local.json
