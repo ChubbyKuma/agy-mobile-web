@@ -1,6 +1,6 @@
-# agy-mobile-web
+# antigravity-mobile-web
 
-A lightweight, zero-install mobile web client and bridge for **Google Antigravity** (AGY).
+A lightweight, zero-install mobile web client and bridge for **Google Antigravity**.
 
 Control, inspect, and prompt your desktop Antigravity coding agents directly from your phone's browser when you're away from your keyboard.
 
@@ -22,7 +22,7 @@ Control, inspect, and prompt your desktop Antigravity coding agents directly fro
  [ Mobile Browser (Phone) ]
             │  HTTP / JSON-RPC
             ▼
-   [ agy-mobile-web (server.py) ]
+ [ antigravity-mobile-web (server.py) ]
             │  Local IPC / JSON-RPC (HTTP POST)
             ▼
  [ Antigravity Language Server (Localhost) ]
@@ -49,8 +49,8 @@ Control, inspect, and prompt your desktop Antigravity coding agents directly fro
 Clone the repository and install dependencies:
 
 ```bash
-git clone https://github.com/ChubbyKuma/agy-mobile-web.git
-cd agy-mobile-web
+git clone https://github.com/ChubbyKuma/antigravity-mobile-web.git
+cd antigravity-mobile-web
 pip install -r requirements.txt
 ```
 
