@@ -9,6 +9,7 @@ ENV/
 
 # Temporary / sensitive data
 *.txt
+!requirements.txt
 *.pdf
 *.html
 *.jpg
