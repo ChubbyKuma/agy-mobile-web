@@ -38,11 +38,145 @@
   }
   button { font-family: inherit; }
 
+  /* ---------- Top Nav Mode Tabs ---------- */
+  .top-nav {
+    background: #12151e;
+    border-bottom: 1px solid var(--border);
+    padding: calc(6px + env(safe-area-inset-top)) 10px 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    z-index: 25;
+    flex-shrink: 0;
+  }
+  .nav-tab {
+    flex: 1;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border-radius: 9px;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--muted);
+    cursor: pointer;
+    background: transparent;
+    transition: all 0.18s ease;
+    user-select: none;
+  }
+  .nav-tab:active { transform: scale(0.98); }
+  .nav-tab.active {
+    background: #232836;
+    color: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  }
+  .qwen-pill {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.08);
+    color: var(--muted);
+    font-weight: 500;
+    transition: all 0.2s ease;
+  }
+  .qwen-pill.online {
+    background: rgba(63,185,80,0.18);
+    color: #3fb950;
+    font-weight: 700;
+  }
+
+  /* ---------- Qwen View Container ---------- */
+  #qwenView {
+    display: none;
+    flex: 1;
+    position: relative;
+    min-height: 0;
+    flex-direction: column;
+    background: var(--bg);
+  }
+  .qwen-bar {
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 7px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    flex-shrink: 0;
+  }
+  .qwen-bar-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .qwen-bar-actions {
+    display: flex;
+    gap: 6px;
+  }
+  #qwenFrame {
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    border: none;
+    background: #0f1117;
+  }
+  .qwen-offline-panel {
+    position: absolute;
+    inset: 0;
+    background: #0f1117;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    text-align: center;
+  }
+  .qwen-offline-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px 20px;
+    max-width: 380px;
+    width: 100%;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  }
+  .qwen-offline-card h3 {
+    margin: 12px 0 8px;
+    font-size: 17px;
+  }
+  .qwen-offline-card p {
+    color: var(--muted);
+    font-size: 13.5px;
+    line-height: 1.55;
+    margin-bottom: 18px;
+  }
+  .qwen-input-group {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .qwen-input-group input {
+    flex: 1;
+    background: #10131a;
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 9px;
+    padding: 8px 10px;
+    font-size: 13px;
+    outline: none;
+  }
+
   /* ---------- Header ---------- */
   header {
     background: var(--panel);
     border-bottom: 1px solid var(--border);
-    padding: calc(8px + env(safe-area-inset-top)) 10px 8px;
+    padding: 7px 10px;
     display: flex;
     align-items: center;
     gap: 7px;
@@ -398,43 +532,85 @@
 
 <div id="toast"></div>
 
-<header>
-  <button class="conv-trigger" onclick="openDrawer()">
-    <span style="font-size:16px">☰</span>
-    <div id="statusDot" class="status-dot"></div>
-    <span id="currentTitle">加载中...</span>
-  </button>
-  <button class="btn-sm danger" id="stopBtn" style="display:none" onclick="stopConv()">■ 停止</button>
-  <button class="btn-sm primary btn-icon" onclick="startNewDraft()" title="新建对话">＋</button>
-  <button class="btn-sm btn-icon" id="moreBtn" onclick="openActions(state.convId)" title="更多">⋯</button>
-</header>
-<div id="netBanner">⚠️ 无法连接到电脑，正在重试...</div>
-
-<div id="main">
-  <div id="chatBox"></div>
-  <button id="fab" onclick="scrollToBottom(true)">↓</button>
+<div class="top-nav">
+  <div class="nav-tab active" id="tabAgy" onclick="switchTab('agy')">
+    <span>🤖</span> <span>Antigravity</span>
+  </div>
+  <div class="nav-tab" id="tabQwen" onclick="switchTab('qwen')">
+    <span>🧠</span> <span>Qwen 27B</span>
+    <span class="qwen-pill" id="qwenBadge">检测中</span>
+  </div>
 </div>
 
-<footer>
-  <div class="model-bar" onclick="openModelSheet()">
-    <div class="model-bar-left">
-      <span id="curModelIcon">🧠</span>
-      <span id="curModelLabel">加载模型中...</span>
-      <span style="color:var(--muted);font-size:10px">▲</span>
+<div id="agyView" style="display:flex; flex-direction:column; flex:1; min-height:0;">
+  <header>
+    <button class="conv-trigger" onclick="openDrawer()">
+      <span style="font-size:16px">☰</span>
+      <div id="statusDot" class="status-dot"></div>
+      <span id="currentTitle">加载中...</span>
+    </button>
+    <button class="btn-sm danger" id="stopBtn" style="display:none" onclick="stopConv()">■ 停止</button>
+    <button class="btn-sm primary btn-icon" onclick="startNewDraft()" title="新建对话">＋</button>
+    <button class="btn-sm btn-icon" id="moreBtn" onclick="openActions(state.convId)" title="更多">⋯</button>
+  </header>
+  <div id="netBanner">⚠️ 无法连接到电脑，正在重试...</div>
+
+  <div id="main">
+    <div id="chatBox"></div>
+    <button id="fab" onclick="scrollToBottom(true)">↓</button>
+  </div>
+
+  <footer>
+    <div class="model-bar" onclick="openModelSheet()">
+      <div class="model-bar-left">
+        <span id="curModelIcon">🧠</span>
+        <span id="curModelLabel">加载模型中...</span>
+        <span style="color:var(--muted);font-size:10px">▲</span>
+      </div>
+      <div class="model-bar-right">
+        <span id="curModelQuotaText">剩余 --%</span>
+        <div class="mini-quota-track"><div id="curModelQuotaBar" class="mini-quota-fill" style="width:100%"></div></div>
+      </div>
     </div>
-    <div class="model-bar-right">
-      <span id="curModelQuotaText">剩余 --%</span>
-      <div class="mini-quota-track"><div id="curModelQuotaBar" class="mini-quota-fill" style="width:100%"></div></div>
+    <div id="imgPreviewStrip"></div>
+    <div class="input-row">
+      <input type="file" id="filePicker" accept="image/*" multiple style="display:none">
+      <button id="attachBtn" type="button" class="btn-attach" onclick="$('filePicker').click()" title="上传图片">📷</button>
+      <textarea id="msgInput" rows="1" placeholder="给 Antigravity 发指令..." enterkeyhint="send"></textarea>
+      <button id="sendBtn" onclick="sendMsg()">发送</button>
+    </div>
+  </footer>
+</div>
+
+<div id="qwenView">
+  <div class="qwen-bar">
+    <div class="qwen-bar-title">
+      <span>🧠</span>
+      <span>Huihui-Qwen3.8-27B (Colab)</span>
+      <span class="status-dot" id="qwenBarDot" style="margin-left:4px"></span>
+    </div>
+    <div class="qwen-bar-actions">
+      <button class="btn-sm" onclick="reloadQwenFrame()" title="刷新">⟳ 刷新</button>
+      <button class="btn-sm" onclick="openQwenNewTab()" title="新标签打开">↗ 全屏</button>
     </div>
   </div>
-  <div id="imgPreviewStrip"></div>
-  <div class="input-row">
-    <input type="file" id="filePicker" accept="image/*" multiple style="display:none">
-    <button id="attachBtn" type="button" class="btn-attach" onclick="$('filePicker').click()" title="上传图片">📷</button>
-    <textarea id="msgInput" rows="1" placeholder="给 Antigravity 发指令..." enterkeyhint="send"></textarea>
-    <button id="sendBtn" onclick="sendMsg()">发送</button>
+  <iframe id="qwenFrame" src="about:blank"></iframe>
+  <div id="qwenOfflineOverlay" class="qwen-offline-panel" style="display:none;">
+    <div class="qwen-offline-card">
+      <div style="font-size:42px">🧠</div>
+      <h3>Colab Qwen 27B 离线中</h3>
+      <p>请在 Google Colab 中点击运行一键部署笔记本。<br>启动就绪后会自动连接到此面板，会话历史永久保存在手机中。</p>
+      <button class="btn-sm primary" style="width:100%;padding:10px" onclick="checkQwenStatus(true)">⟳ 立即刷新连接状态</button>
+      <div style="margin-top:16px; border-top:1px solid var(--border); padding-top:14px;">
+        <div style="font-size:12px; color:var(--muted); margin-bottom:8px;">或手动绑定 Colab 穿透地址：</div>
+        <div class="qwen-input-group">
+          <input type="text" id="manualQwenUrl" placeholder="https://xxx.trycloudflare.com">
+          <button class="btn-sm" onclick="saveManualQwenUrl()">绑定</button>
+        </div>
+      </div>
+    </div>
   </div>
-</footer>
+</div>
 
 <script>
 'use strict';
@@ -1263,11 +1439,96 @@ msgInput.addEventListener('paste', async e => {
   }
 });
 
+// ---------------------------------------------------------------- Colab Qwen 27B View
+let curTab = localStorage.getItem('agy_active_tab') || 'agy';
+let qwenOnline = false;
+
+function switchTab(tab) {
+  curTab = tab;
+  localStorage.setItem('agy_active_tab', tab);
+  const isAgy = (tab === 'agy');
+  $('tabAgy').classList.toggle('active', isAgy);
+  $('tabQwen').classList.toggle('active', !isAgy);
+  $('agyView').style.display = isAgy ? 'flex' : 'none';
+  $('qwenView').style.display = isAgy ? 'none' : 'flex';
+
+  if (!isAgy) {
+    initQwenFrame();
+  }
+}
+
+function initQwenFrame() {
+  const frame = $('qwenFrame');
+  if (!frame.src || frame.src === 'about:blank' || !frame.src.includes('/qwen/')) {
+    frame.src = '/qwen/';
+  }
+  checkQwenStatus();
+}
+
+function reloadQwenFrame() {
+  const frame = $('qwenFrame');
+  frame.src = '/qwen/?t=' + Date.now();
+  checkQwenStatus(true);
+}
+
+function openQwenNewTab() {
+  window.open('/qwen/', '_blank');
+}
+
+async function checkQwenStatus(showToast = false) {
+  try {
+    const res = await api('/api/qwen/status');
+    qwenOnline = !!res.online;
+    $('qwenBadge').textContent = qwenOnline ? '在线' : '离线';
+    $('qwenBadge').classList.toggle('online', qwenOnline);
+    $('qwenBarDot').className = 'status-dot' + (qwenOnline ? '' : ' running');
+    $('qwenBarDot').style.background = qwenOnline ? 'var(--ok)' : 'var(--muted)';
+
+    if (res.url) {
+      $('manualQwenUrl').value = res.url;
+    }
+
+    if (curTab === 'qwen') {
+      $('qwenOfflineOverlay').style.display = qwenOnline ? 'none' : 'flex';
+    }
+    if (showToast) {
+      toast(qwenOnline ? 'Qwen 27B 服务正常连接！' : 'Qwen 暂未连接，请在 Colab 启动', qwenOnline ? '' : 'warn');
+    }
+  } catch (e) {
+    qwenOnline = false;
+    $('qwenBadge').textContent = '离线';
+    $('qwenBadge').classList.remove('online');
+    if (curTab === 'qwen') {
+      $('qwenOfflineOverlay').style.display = 'flex';
+    }
+  }
+}
+
+async function saveManualQwenUrl() {
+  const url = ($('manualQwenUrl').value || '').trim();
+  if (!url) {
+    toast('请输入有效 URL', 'warn');
+    return;
+  }
+  try {
+    await api('/api/qwen/register', { method: 'POST', body: JSON.stringify({ url }) });
+    toast('绑定成功，正在重载...');
+    reloadQwenFrame();
+  } catch (e) {
+    toast('绑定失败: ' + e.message, 'danger');
+  }
+}
+
+setInterval(() => {
+  if (!document.hidden) checkQwenStatus(false);
+}, 15000);
+
 // ---------------------------------------------------------------- lifecycle
 function refreshAll() {
   loadMessages().catch(() => {});
   loadConvs();
   loadModels(false);
+  checkQwenStatus(false);
   schedulePoll(1200);
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshAll(); });
@@ -1280,12 +1541,17 @@ setInterval(() => { if (!document.hidden) loadModels(false); }, 30000);
 async function init() {
   updateHeader();
   loadModels(false);
+  checkQwenStatus(false);
   await loadConvs();
   if (state.convId && !state.draft) {
     $('chatBox').innerHTML = '<div class="empty-state">正在加载对话...</div>';
     await loadMessages(true);
   }
   schedulePoll(1200);
+
+  if (curTab === 'qwen') {
+    switchTab('qwen');
+  }
 }
 init();
 </script>

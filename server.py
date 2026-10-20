@@ -31,7 +31,7 @@ if sys.stdout is None or sys.stderr is None:
 
 from fastapi import Cookie, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 import httpx
 import uvicorn
 
@@ -795,6 +795,157 @@ async def delete_conversation(cascade_id: str, force: bool = False):
     _TRANSCRIPT_CACHE.pop(cascade_id, None)
     invalidate_caches()
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Colab Qwen 27B Bridge & Reverse Proxy
+# ---------------------------------------------------------------------------
+QWEN_CONFIG_FILE = BASE_DIR / "qwen_endpoint.json"
+_QWEN_PROXY_CLIENT: httpx.AsyncClient | None = None
+
+
+def get_qwen_endpoint() -> str | None:
+    if not QWEN_CONFIG_FILE.exists():
+        return None
+    try:
+        data = json.loads(QWEN_CONFIG_FILE.read_text(encoding="utf-8"))
+        return data.get("url")
+    except Exception:
+        return None
+
+
+def set_qwen_endpoint(url: str | None):
+    try:
+        QWEN_CONFIG_FILE.write_text(json.dumps({"url": url, "updated_at": time.time()}), encoding="utf-8")
+    except Exception as e:
+        print(f"Failed to write qwen config: {e}")
+
+
+def get_qwen_client() -> httpx.AsyncClient:
+    global _QWEN_PROXY_CLIENT
+    if _QWEN_PROXY_CLIENT is None or _QWEN_PROXY_CLIENT.is_closed:
+        _QWEN_PROXY_CLIENT = httpx.AsyncClient(
+            verify=False,
+            timeout=httpx.Timeout(3600.0, connect=15.0),
+            follow_redirects=True,
+            limits=httpx.Limits(max_keepalive_connections=20, max_connections=50),
+        )
+    return _QWEN_PROXY_CLIENT
+
+
+@app.post("/api/qwen/register", dependencies=[Depends(check_access)])
+async def register_qwen_endpoint(request: Request):
+    data = await request.json()
+    url = (data.get("url") or "").strip().rstrip("/")
+    if not url.startswith("http://") and not url.startswith("https://"):
+        raise HTTPException(status_code=400, detail="Invalid URL format")
+    set_qwen_endpoint(url)
+    return {"ok": True, "url": url}
+
+
+@app.get("/api/qwen/status", dependencies=[Depends(check_access)])
+async def qwen_status():
+    url = get_qwen_endpoint()
+    if not url:
+        return {"online": False, "url": None, "msg": "未注册 Colab 地址"}
+    client = get_http_client()
+    try:
+        resp = await client.get(f"{url}/qwen/health", timeout=2.5)
+        online = (resp.status_code == 200)
+    except Exception:
+        try:
+            resp = await client.get(f"{url}/health", timeout=2.5)
+            online = (resp.status_code == 200)
+        except Exception:
+            online = False
+    return {"online": online, "url": url}
+
+
+@app.get("/qwen", dependencies=[Depends(check_access)])
+async def qwen_root_redirect():
+    return RedirectResponse(url="/qwen/", status_code=307)
+
+
+@app.api_route(
+    "/qwen/{path:path}",
+    methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"],
+    dependencies=[Depends(check_access)],
+)
+async def qwen_proxy(path: str, request: Request):
+    upstream_base = get_qwen_endpoint()
+    if not upstream_base:
+        return HTMLResponse(
+            """<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { background: #0f1117; color: #e6edf3; font-family: -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; padding: 20px; box-sizing: border-box; }
+  .card { background: #181b24; border: 1px solid #2a2f3d; border-radius: 16px; padding: 28px 20px; max-width: 400px; width: 100%; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+  h2 { margin: 0 0 10px; font-size: 19px; }
+  p { color: #8b949e; font-size: 14px; line-height: 1.6; margin-bottom: 20px; }
+  .btn { display: inline-block; background: #4f8cff; color: #fff; padding: 10px 18px; border-radius: 10px; text-decoration: none; font-weight: 500; font-size: 14px; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div style="font-size:38px;margin-bottom:12px">🧠</div>
+    <h2>Colab Qwen 服务尚未连接</h2>
+    <p>请先在 Google Colab 中运行一键部署笔记本，启动后会自动连接并保存所有对话。</p>
+    <a href="/" class="btn">返回 Antigravity</a>
+  </div>
+</body>
+</html>""",
+            status_code=503,
+        )
+
+    target_url = f"{upstream_base}/qwen/{path}"
+    if request.url.query:
+        target_url = f"{target_url}?{request.url.query}"
+
+    HOP_BY_HOP = {
+        "host", "content-length", "transfer-encoding", "connection",
+        "keep-alive", "proxy-authenticate", "proxy-authorization",
+        "te", "trailers", "upgrade",
+    }
+
+    headers = {k: v for k, v in request.headers.items() if k.lower() not in HOP_BY_HOP}
+    headers["host"] = upstream_base.split("://", 1)[1].split("/", 1)[0]
+
+    body = await request.body()
+    client = get_qwen_client()
+
+    try:
+        upstream_req = client.build_request(
+            method=request.method,
+            url=target_url,
+            headers=headers,
+            content=body,
+        )
+        resp = await client.send(upstream_req, stream=True)
+    except Exception as e:
+        return JSONResponse(status_code=502, content={"error": f"连接 Colab 隧道失败: {e}"})
+
+    resp_headers = {}
+    for k, v in resp.headers.items():
+        lk = k.lower()
+        if lk not in HOP_BY_HOP and lk not in ("content-security-policy", "x-frame-options"):
+            resp_headers[k] = v
+
+    resp_headers["X-Frame-Options"] = "SAMEORIGIN"
+
+    async def stream_body():
+        try:
+            async for chunk in resp.aiter_raw():
+                yield chunk
+        finally:
+            await resp.aclose()
+
+    return StreamingResponse(
+        stream_body(),
+        status_code=resp.status_code,
+        headers=resp_headers,
+        media_type=resp.headers.get("content-type"),
+    )
 
 
 # ---------------------------------------------------------------------------
