@@ -23,6 +23,11 @@ import win32com.client
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    try:
+        import uvicorn.loops.asyncio
+        uvicorn.loops.asyncio.asyncio_loop_factory = lambda *a, **k: asyncio.SelectorEventLoop
+    except Exception:
+        pass
 
 if sys.stdout is None or sys.stderr is None:
     _log_file = open(pathlib.Path(__file__).parent / "server.log", "a", encoding="utf-8")
@@ -977,4 +982,11 @@ async def index():
 if __name__ == "__main__":
     threading.Thread(target=ensure_upnp_mapping, daemon=True).start()
     print("=== Antigravity Mobile Web Bridge v3 已启动 ===")
-    uvicorn.run(app, host="0.0.0.0", port=8765, log_level="warning")
+    while True:
+        try:
+            uvicorn.run(app, host="0.0.0.0", port=8765, log_level="warning", loop="asyncio")
+        except KeyboardInterrupt:
+            break
+        except Exception as e:
+            print(f"Uvicorn service restarted after error: {e}")
+            time.sleep(1.5)
