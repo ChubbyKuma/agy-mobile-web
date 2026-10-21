@@ -58,6 +58,7 @@ _DISCOVER_LOCK = asyncio.Lock()
 _TRANSCRIPT_CACHE: dict[str, dict[str, Any]] = {}
 _TRAJECTORIES_CACHE: dict[str, Any] = {"ts": 0.0, "data": {}}
 _MODELS_CACHE: dict[str, Any] = {"ts": 0.0, "data": None}
+_DISK_CONV_CACHE: dict[str, Any] = {"ts": 0.0, "items": {}}
 
 
 class RpcError(Exception):
@@ -84,6 +85,7 @@ def get_http_client() -> httpx.AsyncClient:
 def invalidate_caches():
     _TRAJECTORIES_CACHE["ts"] = 0.0
     _MODELS_CACHE["ts"] = 0.0
+    _DISK_CONV_CACHE["ts"] = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -263,9 +265,13 @@ async def get_cached_trajectories(max_age: float = 1.2) -> dict[str, Any]:
 async def get_meta(cascade_id: str, max_age: float = 1.0) -> dict[str, Any]:
     try:
         data = await get_cached_trajectories(max_age=max_age)
-        return data.get("trajectorySummaries", {}).get(cascade_id, {}) or {}
+        meta = data.get("trajectorySummaries", {}).get(cascade_id, {})
+        if meta:
+            return meta
     except Exception:
-        return {}
+        pass
+    disk_convs = scan_disk_conversations()
+    return disk_convs.get(cascade_id, {})
 
 
 async def get_cascade_config(cascade_id: str | None = None, model_override: str | None = None) -> dict[str, Any]:
@@ -425,19 +431,96 @@ async def serve_media(path: str):
 # Conversations
 # ---------------------------------------------------------------------------
 
+def scan_disk_conversations() -> dict[str, dict[str, Any]]:
+    now = time.time()
+    if now - _DISK_CONV_CACHE["ts"] < 2.5 and _DISK_CONV_CACHE["items"]:
+        return _DISK_CONV_CACHE["items"]
+
+    convs = {}
+    if not BRAIN_DIR.exists():
+        return convs
+
+    for p in BRAIN_DIR.iterdir():
+        if not p.is_dir() or p.name == "tempmediaStorage" or not ID_RE.match(p.name):
+            continue
+        cid = p.name
+        log_dir = p / ".system_generated" / "logs"
+        tfile = log_dir / "transcript.jsonl"
+        if not tfile.exists():
+            tfile = log_dir / "transcript_full.jsonl"
+        title = ""
+        last_time = ""
+        step_count = 0
+        if tfile.exists():
+            try:
+                with open(tfile, "r", encoding="utf-8", errors="replace") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        step_count += 1
+                        try:
+                            obj = json.loads(line)
+                            if "created_at" in obj:
+                                last_time = obj["created_at"]
+                            if not title and obj.get("type") == "USER_INPUT":
+                                c = obj.get("content", "")
+                                m = re.search(r"<USER_REQUEST>\s*(.*?)\s*</USER_REQUEST>", c, re.DOTALL)
+                                req_text = m.group(1).strip() if m else c.strip()
+                                for line_text in req_text.splitlines():
+                                    line_text = line_text.strip()
+                                    if line_text and not line_text.startswith("<") and not line_text.startswith("#"):
+                                        title = line_text[:60]
+                                        break
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+        if not last_time:
+            st = p.stat()
+            last_time = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(st.st_mtime))
+        convs[cid] = {
+            "id": cid,
+            "summary": title or "新对话",
+            "status": "",
+            "stepCount": step_count,
+            "lastModifiedTime": last_time,
+        }
+    _DISK_CONV_CACHE["ts"] = now
+    _DISK_CONV_CACHE["items"] = convs
+    return convs
+
+
 @app.get("/api/conversations", dependencies=[Depends(check_access)])
 async def list_conversations():
-    data = await get_cached_trajectories(max_age=1.0)
-    items = []
-    for cid, meta in data.get("trajectorySummaries", {}).items():
-        items.append({
-            "id": cid,
-            "summary": meta.get("summary") or "新对话",
-            "status": meta.get("status", ""),
-            "stepCount": meta.get("stepCount", 0),
-            "lastModifiedTime": meta.get("lastModifiedTime", ""),
-        })
-    items.sort(key=lambda x: x["lastModifiedTime"], reverse=True)
+    disk_convs = scan_disk_conversations()
+    try:
+        rpc_data = await get_cached_trajectories(max_age=1.0)
+        rpc_summaries = rpc_data.get("trajectorySummaries", {})
+    except Exception:
+        rpc_summaries = {}
+
+    merged = dict(disk_convs)
+    for cid, meta in rpc_summaries.items():
+        if cid in merged:
+            merged[cid]["status"] = meta.get("status", merged[cid]["status"])
+            if meta.get("summary"):
+                merged[cid]["summary"] = meta.get("summary")
+            if meta.get("stepCount"):
+                merged[cid]["stepCount"] = meta.get("stepCount")
+            if meta.get("lastModifiedTime"):
+                merged[cid]["lastModifiedTime"] = meta.get("lastModifiedTime")
+        else:
+            merged[cid] = {
+                "id": cid,
+                "summary": meta.get("summary") or "新对话",
+                "status": meta.get("status", ""),
+                "stepCount": meta.get("stepCount", 0),
+                "lastModifiedTime": meta.get("lastModifiedTime", ""),
+            }
+
+    items = list(merged.values())
+    items.sort(key=lambda x: x.get("lastModifiedTime") or "", reverse=True)
     return {"conversations": items}
 
 
