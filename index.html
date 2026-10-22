@@ -949,6 +949,9 @@ async function loadMessages(force = false) {
   try {
     data = await api(`/api/conversations/${id}/messages?v=${force ? '' : encodeURIComponent(state.version)}`);
   } catch (e) {
+    if (e.status === 404 && state.convs.length > 0) {
+      switchConv(state.convs[0].id);
+    }
     return;
   }
   if (seq !== state.msgSeq || id !== state.convId || state.draft) return;
@@ -1156,10 +1159,12 @@ async function loadConvs() {
     const data = await api('/api/conversations');
     state.convs = data.conversations || [];
   } catch (e) { return; }
-  if (!state.convId && !state.draft) {
-    if (state.convs.length) switchConv(state.convs[0].id);
-    else startNewDraft();
-    return;
+  if (!state.draft) {
+    if (!state.convId || (state.convs.length && !state.convs.some(c => c.id === state.convId))) {
+      if (state.convs.length) switchConv(state.convs[0].id);
+      else startNewDraft();
+      return;
+    }
   }
   updateHeader();
   renderDrawerList();

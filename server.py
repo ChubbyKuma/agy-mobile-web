@@ -125,14 +125,17 @@ def _get_process_listening_ports(pid: int) -> list[int]:
 
 
 def get_local_ip() -> str:
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        s.connect(("8.8.8.8", 80))
-        return s.getsockname()[0]
-    except Exception:
-        return "127.0.0.1"
-    finally:
-        s.close()
+    for target in ("192.168.1.1", "192.168.0.1", "192.168.31.1", "10.0.0.1", "8.8.8.8"):
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect((target, 80))
+            ip = s.getsockname()[0]
+            s.close()
+            if ip.startswith(("192.168.", "10.")) and not ip.startswith("10.8.8."):
+                return ip
+        except Exception:
+            pass
+    return "127.0.0.1"
 
 
 def keep_upnp_alive():
