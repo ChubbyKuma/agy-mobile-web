@@ -135,23 +135,28 @@ def get_local_ip() -> str:
         s.close()
 
 
-def ensure_upnp_mapping():
-    """Automatically maps external TCP port 8765 on the router to this PC via UPnP COM interface (zero console flashes)."""
-    try:
-        pythoncom.CoInitialize()
-        upnp = win32com.client.Dispatch("HNetCfg.NATUPnP")
-        mappings = upnp.StaticPortMappingCollection
-        if mappings is not None:
-            local_ip = get_local_ip()
-            if local_ip and not local_ip.startswith("127."):
-                mappings.Add(8765, "TCP", 8765, local_ip, True, "AntigravityMobileWeb")
-    except Exception:
-        pass
-    finally:
+def keep_upnp_alive():
+    """Continuously maps external TCP port 8765 on the router and refreshes it every 30 seconds so router UPnP lease never expires."""
+    while True:
         try:
-            pythoncom.CoUninitialize()
+            pythoncom.CoInitialize()
+            upnp = win32com.client.Dispatch("HNetCfg.NATUPnP")
+            mappings = upnp.StaticPortMappingCollection
+            if mappings is not None:
+                local_ip = get_local_ip()
+                if local_ip and not local_ip.startswith("127."):
+                    try:
+                        mappings.Add(8765, "TCP", 8765, local_ip, True, "AntigravityMobileWeb")
+                    except Exception:
+                        pass
         except Exception:
             pass
+        finally:
+            try:
+                pythoncom.CoUninitialize()
+            except Exception:
+                pass
+        time.sleep(30)
 
 
 def discover_language_server() -> tuple[str, list[int]]:
@@ -1063,7 +1068,7 @@ async def index():
 
 
 if __name__ == "__main__":
-    threading.Thread(target=ensure_upnp_mapping, daemon=True).start()
+    threading.Thread(target=keep_upnp_alive, daemon=True).start()
     print("=== Antigravity Mobile Web Bridge v3 已启动 ===")
     while True:
         try:
